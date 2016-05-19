@@ -591,7 +591,7 @@ InstallMemoryDeviceStructure (
   UINT32                      VendorID;
   UINT64                      MemorySize;
   UINT32                      SpeedProfile;
-  UINT64                      RegionMapCount;
+  UINT64                      RegionAddrCount;
   EFI_SMBIOS_HANDLE           SmbiosHandle;
   ARM_TYPE17                  MemoryDevice;
   EFI_STATUS                  Status = EFI_SUCCESS;
@@ -623,11 +623,11 @@ InstallMemoryDeviceStructure (
   }
 
   // LPDDR size
-  RegionMapCount = 0;
-  while (MmioRead32 (MDDRC_AXI_BASE + AXI_REGION_MAP_OFFSET (RegionMapCount)) != 0) {
-    RegionMapCount++;
+  RegionAddrCount = 0;
+  while (MmioRead32 (MDDRC_AXI_BASE + AXI_REGION_MAP_OFFSET (RegionAddrCount)) != 0) {
+    RegionAddrCount++;
   }
-  Data = MmioRead32 (MDDRC_AXI_BASE + AXI_REGION_MAP_OFFSET (RegionMapCount - 1));
+  Data = MmioRead32 (MDDRC_AXI_BASE + AXI_REGION_MAP_OFFSET (RegionAddrCount - 1));
   MemorySize = 16 << ((Data >> 8) & 0x7);
   MemorySize += Data << 24;
   mPhysicalMemorySize = (UINT16)((MemorySize << 20) / SIZE_1MB);
