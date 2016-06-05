@@ -189,6 +189,9 @@
 
   gEfiMdeModulePkgTokenSpaceGuid.PcdTurnOffUsbLegacySupport|TRUE
 
+  # Necessary for for runtime write support in BlockRamVariableDxe
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageGetBaseAddressAtRuntime|TRUE
+
 [PcdsFixedAtBuild.common]
   gEfiMdePkgTokenSpaceGuid.PcdMaximumUnicodeStringLength|1000000
   gEfiMdePkgTokenSpaceGuid.PcdMaximumAsciiStringLength|1000000
