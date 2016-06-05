@@ -18,7 +18,7 @@
 
 [Defines]
   DEC_SPECIFICATION              = 0x00010005
-  PACKAGE_NAME                   = OpenPlatformDriversVariableBlockVariableDxePkg
+  PACKAGE_NAME                   = BlockRamVariableDxePkg
   PACKAGE_GUID                   = 591a584f-3c3c-4e06-b1f8-2ad61f10f6c7
   PACKAGE_VERSION                = 0.1
 
@@ -34,12 +34,12 @@
 ################################################################################
 
 [Guids.common]
-  gBlockVariableDxeTokenSpaceGuid	= { 0x0c5d52e4, 0xadca, 0x48a8,  { 0xb9, 0xf5, 0x53, 0x15, 0x96, 0x81, 0xff, 0x25 }}
+  gBlockRamVariableDxeTokenSpaceGuid	= { 0x0c5d52e4, 0xadca, 0x48a8,  { 0xb9, 0xf5, 0x53, 0x15, 0x96, 0x81, 0xff, 0x25 }}
   gVariableRuntimeGuid                  = { 0xcbd2e4d5, 0x7068, 0x4ff5,  { 0xb4, 0x62, 0x98, 0x22, 0xb4, 0xad, 0x8d, 0x60 }}
 
 [PcdsFixedAtBuild.common]
-  # BlockVariable Driver PCDs
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount|0x0|UINT32|0x00000001
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize|0x0|UINT32|0x00000002
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba|0|UINT32|0x00000003
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath|L""|VOID*|0x00000004
+  # BlockRamVariable Driver PCDs
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount|0x0|UINT32|0x00000001
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize|0x0|UINT32|0x00000002
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba|0|UINT32|0x00000003
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath|L""|VOID*|0x00000004

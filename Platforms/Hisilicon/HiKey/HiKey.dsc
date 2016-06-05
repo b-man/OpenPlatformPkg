@@ -264,10 +264,10 @@
   #
   # NV Storage PCDs.
   #
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount|0x00001000
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize|0x00000200
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba|0x00006000
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath|L"VenHw(B549F005-4BD4-4020-A0CB-06F42BDA68C3)/HD(5,GPT,00354BCD-BBCB-4CB3-B5AE-CDEFCB5DAC43)"
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount|0x00001000
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize|0x00000200
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba|0x00006000
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath|L"VenHw(B549F005-4BD4-4020-A0CB-06F42BDA68C3)/HD(5,GPT,00354BCD-BBCB-4CB3-B5AE-CDEFCB5DAC43)"
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase|0x30000000
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize|0x00010000
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingBase|0x30010000
@@ -278,6 +278,12 @@
   # System Memory (1GB)
   gArmTokenSpaceGuid.PcdSystemMemoryBase|0x00000000
   gArmTokenSpaceGuid.PcdSystemMemorySize|0x3E000000
+
+  #
+  # SMBIOS version
+  #
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosVersion|0x0300
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosDocRev|0x0
 
   # HiKey Dual-Cluster profile
   gArmPlatformTokenSpaceGuid.PcdCoreCount|8
@@ -404,7 +410,7 @@
       VarCheckLib|MdeModulePkg/Library/VarCheckLib/VarCheckLib.inf
       NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
   }
-  OpenPlatformPkg/Drivers/Variable/BlockVariableDxe/BlockVariableDxe.inf
+  OpenPlatformPkg/Drivers/Variable/BlockRamVariableDxe/BlockRamVariableDxe.inf
 
   MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 
@@ -412,6 +418,12 @@
   ArmPkg/Drivers/TimerDxe/TimerDxe.inf
 
   MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+
+  #
+  # SMBIOS/DMI
+  #
+  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+  OpenPlatformPkg/Platforms/Hisilicon/HiKey/SmbiosPlatformDxe/SmbiosPlatformDxe.inf
 
   #
   # GPIO

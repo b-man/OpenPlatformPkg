@@ -16,20 +16,22 @@
 
 [Defines]
   INF_VERSION                    = 0x00010005
-  BASE_NAME                      = BlockVariableDxe
-  FILE_GUID                      = 522fc4a8-46d8-403e-a415-e2dbb1e0ebc0
-  MODULE_TYPE                    = DXE_DRIVER
+  BASE_NAME                      = BlockRamVariableDxe
+  FILE_GUID                      = a27deea8-f6d0-47b0-8fb1-db521796be39
+  MODULE_TYPE                    = DXE_RUNTIME_DRIVER
   VERSION_STRING                 = 1.0
 
-  ENTRY_POINT                    = BlockVariableDxeInitialize
+  ENTRY_POINT                    = FvbProtocolInitializeDxe
 
 [Sources.common]
-  BlockVariableDxe.c
+  FvbAtBoot.c
+  FvbAtRuntime.c
+  BlockRamVariableDxe.c
 
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
-  OpenPlatformPkg/Drivers/Variable/BlockVariableDxe/BlockVariableDxe.dec
+  OpenPlatformPkg/Drivers/Variable/BlockRamVariableDxe/BlockRamVariableDxe.dec
 
 [LibraryClasses]
   ArmLib
@@ -39,6 +41,8 @@
   IoLib
   UefiDriverEntryPoint
   UefiLib
+  UefiRuntimeLib
+  UefiBootServicesTableLib
 
 [Guids]
   gEfiSystemNvDataFvGuid
@@ -55,10 +59,10 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize                    ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize                  ## CONSUMES
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize                    ## CONSUMES
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount                  ## CONSUMES
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize                   ## CONSUMES
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba                    ## CONSUMES
-  gBlockVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath             ## CONSUMES
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockCount               ## CONSUMES
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockSize                ## CONSUMES
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockLba                 ## CONSUMES
+  gBlockRamVariableDxeTokenSpaceGuid.PcdNvStorageVariableBlockDevicePath          ## CONSUMES
 
 [Depex]
   BEFORE gVariableRuntimeGuid

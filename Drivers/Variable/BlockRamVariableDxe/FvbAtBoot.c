@@ -1,6 +1,7 @@
 /** @file
-  This file implement the Variable Protocol for the block device.
+  This files implements boottime Firmware Volume I/O routines.
 
+  Copyright (c) 2016, Brian McKenzie. All rights reserved.
   Copyright (c) 2015-2016, Linaro Limited. All rights reserved.
   Copyright (c) 2015-2016, Hisilicon Limited. All rights reserved.
 
@@ -14,6 +15,7 @@
 
 **/
 
+#include <Guid/EventGroup.h>
 #include <Guid/VariableFormat.h>
 #include <Guid/SystemNvDataGuid.h>
 
@@ -26,85 +28,21 @@
 #include <Library/PcdLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Library/UefiRuntimeLib.h>
 
-#include "BlockVariableDxe.h"
+#include "BlockRamVariableDxe.h"
 
 
-STATIC EFI_PHYSICAL_ADDRESS      mMapNvStorageVariableBase;
-
-EFI_STATUS
-EFIAPI
-FvbGetAttributes (
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL    *This,
-  OUT       EFI_FVB_ATTRIBUTES_2                   *Attributes
-  )
-{
-  EFI_FVB_ATTRIBUTES_2 FvbAttributes;
-  FvbAttributes = (EFI_FVB_ATTRIBUTES_2) (
-
-      EFI_FVB2_READ_ENABLED_CAP | // Reads may be enabled
-      EFI_FVB2_READ_STATUS      | // Reads are currently enabled
-      EFI_FVB2_STICKY_WRITE     | // A block erase is required to flip bits into EFI_FVB2_ERASE_POLARITY
-      EFI_FVB2_MEMORY_MAPPED    | // It is memory mapped
-      EFI_FVB2_ERASE_POLARITY     // After erasure all bits take this value (i.e. '1')
-
-      );
-  FvbAttributes |= EFI_FVB2_WRITE_STATUS      | // Writes are currently enabled
-                   EFI_FVB2_WRITE_ENABLED_CAP;  // Writes may be enabled
-
-  *Attributes = FvbAttributes;
-
-  DEBUG ((DEBUG_BLKIO, "FvbGetAttributes(0x%X)\n", *Attributes));
-  return EFI_SUCCESS;
-}
+EFI_PHYSICAL_ADDRESS      mMapNvStorageVariableBase;
 
 EFI_STATUS
 EFIAPI
-FvbSetAttributes(
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL  *This,
-  IN OUT    EFI_FVB_ATTRIBUTES_2                 *Attributes
-  )
-{
-  DEBUG ((DEBUG_BLKIO, "FvbSetAttributes(0x%X) is not supported\n",*Attributes));
-  return EFI_UNSUPPORTED;
-}
-
-EFI_STATUS
-EFIAPI
-FvbGetPhysicalAddress (
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL  *This,
-  OUT       EFI_PHYSICAL_ADDRESS                 *Address
-  )
-{
-  *Address = mMapNvStorageVariableBase;
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-EFIAPI
-FvbGetBlockSize (
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL  *This,
-  IN        EFI_LBA                              Lba,
-  OUT       UINTN                                *BlockSize,
-  OUT       UINTN                                *NumberOfBlocks
-  )
-{
-  BLOCK_VARIABLE_INSTANCE       *Instance;
-
-  Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
-  *BlockSize = (UINTN) Instance->Media.BlockSize;
-  *NumberOfBlocks = PcdGet32 (PcdNvStorageVariableBlockCount);
-  return EFI_SUCCESS;
-}
-
-EFI_STATUS
-EFIAPI
-FvbRead (
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL   *This,
-  IN        EFI_LBA                               Lba,
-  IN        UINTN                                 Offset,
-  IN OUT    UINTN                                 *NumBytes,
-  IN OUT    UINT8                                 *Buffer
+FvbNonVolatileRead (
+  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK_PROTOCOL  *This,
+  IN        EFI_LBA                             Lba,
+  IN        UINTN                               Offset,
+  IN OUT    UINTN                               *NumBytes,
+  IN OUT    UINT8                               *Buffer
   )
 {
   BLOCK_VARIABLE_INSTANCE       *Instance;
@@ -117,34 +55,41 @@ FvbRead (
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
   DataPtr = AllocateZeroPool (Bytes);
+
   if (DataPtr == NULL) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed to allocate buffer.\n"));
+    DEBUG ((EFI_D_ERROR, "%a: failed to allocate buffer.\n", __func__));
     return EFI_BUFFER_TOO_SMALL;
   }
+
   WriteBackDataCacheRange (DataPtr, Bytes);
   InvalidateDataCacheRange (Buffer, *NumBytes);
+
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
 		                Bytes, DataPtr);
+
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbRead StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-	    Instance->StartLba, Lba, Offset, Status));
+    DEBUG ((EFI_D_ERROR, "%a: StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+	    __func__, Instance->StartLba, Lba, Offset, Status));
     goto exit;
   }
+
   CopyMem (Buffer, DataPtr + Offset, *NumBytes);
   WriteBackDataCacheRange (Buffer, *NumBytes);
+
 exit:
   FreePool (DataPtr);
+
   return Status;
 }
 
 EFI_STATUS
 EFIAPI
-FvbWrite (
-  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL   *This,
-  IN        EFI_LBA                               Lba,
-  IN        UINTN                                 Offset,
-  IN OUT    UINTN                                 *NumBytes,
-  IN        UINT8                                 *Buffer
+FvbNonVolatileWrite (
+  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK_PROTOCOL  *This,
+  IN        EFI_LBA                             Lba,
+  IN        UINTN                               Offset,
+  IN OUT    UINTN                               *NumBytes,
+  IN        UINT8                               *Buffer
   )
 {
   BLOCK_VARIABLE_INSTANCE       *Instance;
@@ -157,76 +102,61 @@ FvbWrite (
   BlockIo = Instance->BlockIoProtocol;
   Bytes = (Offset + *NumBytes + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize * Instance->Media.BlockSize;
   DataPtr = AllocateZeroPool (Bytes);
+
   if (DataPtr == NULL) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed to allocate buffer.\n"));
+    DEBUG ((EFI_D_ERROR, "%a: failed to allocate buffer.\n", __func__));
     return EFI_BUFFER_TOO_SMALL;
   }
+
   WriteBackDataCacheRange (DataPtr, Bytes);
+
   Status = BlockIo->ReadBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
                                 Bytes, DataPtr);
+
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite: failed on reading blocks.\n"));
+    DEBUG ((EFI_D_ERROR, "%a: failed on reading blocks.\n", __func__));
     goto exit;
   }
+
   CopyMem (DataPtr + Offset, Buffer, *NumBytes);
   WriteBackDataCacheRange (DataPtr, Bytes);
+
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
                                  Bytes, DataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-            Instance->StartLba, Lba, Offset, Status));
+    DEBUG ((EFI_D_ERROR, "%a: StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+            __func__, Instance->StartLba, Lba, Offset, Status));
   }
+
   // Sometimes the variable isn't flushed into block device if it's the last flush operation.
   // So flush it again.
   Status = BlockIo->WriteBlocks (BlockIo, BlockIo->Media->MediaId, Instance->StartLba + Lba,
                                  Bytes, DataPtr);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "FvbWrite StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
-            Instance->StartLba, Lba, Offset, Status));
+    DEBUG ((EFI_D_ERROR, "%a: StartLba:%x, Lba:%x, Offset:%x, Status:%x\n",
+            __func__, Instance->StartLba, Lba, Offset, Status));
   }
+
+  Status = FvbVolatileWrite(This, Lba, Offset, NumBytes, Buffer);
+
 exit:
   FreePool (DataPtr);
+
   return Status;
 }
 
 EFI_STATUS
 EFIAPI
-FvbEraseBlocks (
-  IN CONST EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL *This,
+FvbNonVolatileEraseBlocks (
+  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK_PROTOCOL  *This,
   ...
   )
 {
   return EFI_SUCCESS;
 }
 
-STATIC BLOCK_VARIABLE_INSTANCE   mBlockVariableInstance = {
-  .Signature      = BLOCK_VARIABLE_SIGNATURE,
-  .Media          = {
-    .MediaId                       = 0,
-    .RemovableMedia                = FALSE,
-    .MediaPresent                  = TRUE,
-    .LogicalPartition              = TRUE,
-    .ReadOnly                      = FALSE,
-    .WriteCaching                  = FALSE,
-    .BlockSize                     = 0,
-    .IoAlign                       = 4,
-    .LastBlock                     = 0,
-    .LowestAlignedLba              = 0,
-    .LogicalBlocksPerPhysicalBlock = 0,
-  },
-  .FvbProtocol    = {
-    .GetAttributes        = FvbGetAttributes,
-    .SetAttributes        = FvbSetAttributes,
-    .GetPhysicalAddress   = FvbGetPhysicalAddress,
-    .GetBlockSize         = FvbGetBlockSize,
-    .Read                 = FvbRead,
-    .Write                = FvbWrite,
-    .EraseBlocks          = FvbEraseBlocks,
-  }
-};
-
 EFI_STATUS
-ValidateFvHeader (
+FvbValidateHeader (
   IN EFI_FIRMWARE_VOLUME_HEADER  *FwVolHeader
   )
 {
@@ -243,42 +173,45 @@ ValidateFvHeader (
   // Length of FvBlock cannot be 2**64-1
   // HeaderLength cannot be an odd number
   //
-  if (   (FwVolHeader->Revision  != EFI_FVH_REVISION)
+  if ((FwVolHeader->Revision  != EFI_FVH_REVISION)
       || (FwVolHeader->Signature != EFI_FVH_SIGNATURE)
       || (FwVolHeader->FvLength  != FvLength)
       )
   {
-    DEBUG ((EFI_D_ERROR, "ValidateFvHeader: No Firmware Volume header present\n"));
+    DEBUG ((EFI_D_ERROR, "%a: No Firmware Volume header present\n", __func__));
     return EFI_NOT_FOUND;
   }
 
   // Check the Firmware Volume Guid
-  if( CompareGuid (&FwVolHeader->FileSystemGuid, &gEfiSystemNvDataFvGuid) == FALSE ) {
-    DEBUG ((EFI_D_ERROR, "ValidateFvHeader: Firmware Volume Guid non-compatible\n"));
+  if(CompareGuid (&FwVolHeader->FileSystemGuid, &gEfiSystemNvDataFvGuid) == FALSE ) {
+    DEBUG ((EFI_D_ERROR, "%a: Firmware Volume Guid non-compatible\n", __func__));
     return EFI_NOT_FOUND;
   }
 
   // Verify the header checksum
   TempChecksum = FwVolHeader->Checksum;
   FwVolHeader->Checksum = 0;
+
   Checksum = CalculateSum16((UINT16*)FwVolHeader, FwVolHeader->HeaderLength);
+
   if (Checksum != TempChecksum) {
-    DEBUG ((EFI_D_ERROR, "ValidateFvHeader: FV checksum is invalid (Checksum:0x%X)\n",Checksum));
+    DEBUG ((EFI_D_ERROR, "%a: FV checksum is invalid (Checksum:0x%X)\n", __func__, Checksum));
     return EFI_NOT_FOUND;
   }
+
   FwVolHeader->Checksum = Checksum;
 
   VariableStoreHeader = (VARIABLE_STORE_HEADER*)((UINTN)FwVolHeader + FwVolHeader->HeaderLength);
 
   // Check the Variable Store Guid
   if( CompareGuid (&VariableStoreHeader->Signature, &gEfiVariableGuid) == FALSE ) {
-    DEBUG ((EFI_D_ERROR, "ValidateFvHeader: Variable Store Guid non-compatible\n"));
+    DEBUG ((EFI_D_ERROR, "%a: Variable Store Guid non-compatible\n", __func__));
     return EFI_NOT_FOUND;
   }
 
   VariableStoreLength = PcdGet32 (PcdFlashNvStorageVariableSize) - FwVolHeader->HeaderLength;
   if (VariableStoreHeader->Size != VariableStoreLength) {
-    DEBUG ((EFI_D_ERROR, "ValidateFvHeader: Variable Store Length does not match\n"));
+    DEBUG ((EFI_D_ERROR, "%a: Variable Store Length does not match\n", __func__));
     return EFI_NOT_FOUND;
   }
 
@@ -286,15 +219,45 @@ ValidateFvHeader (
 }
 
 EFI_STATUS
-InitNonVolatileVariableStore (
+EFIAPI
+FvbNonVolatileGetPhysicalAddress (
+  IN CONST  EFI_FIRMWARE_VOLUME_BLOCK_PROTOCOL  *This,
+  OUT       EFI_PHYSICAL_ADDRESS                *Address
+  )
+{
+	*Address = mMapNvStorageVariableBase;
+
+	return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+FvbInitNonVolatileVariableStore (
   IN BLOCK_VARIABLE_INSTANCE      *Instance,
   IN VOID                         *Headers,
   IN UINTN                        HeadersLength
   )
 {
-  EFI_FIRMWARE_VOLUME_HEADER            *FirmwareVolumeHeader;
+  UINT32                                Count;
   EFI_STATUS                            Status;
+  EFI_FIRMWARE_VOLUME_HEADER            *FirmwareVolumeHeader;
   VARIABLE_STORE_HEADER                 *VariableStoreHeader;
+
+  // Check if we already have a valid Fv header
+  DEBUG ((EFI_D_INFO, "Validating Fv headers...\n"));
+  Status = FvbValidateHeader (Headers);
+  if (Status == EFI_SUCCESS) {
+  	return Status;
+  }
+
+  DEBUG ((EFI_D_ERROR, "%a: Invalid or missing Fv Headers. Attempting recovery.\n", __func__));
+
+  // Erase all data on the block device that is reserved for variable storage
+  Count = PcdGet32 (PcdNvStorageVariableBlockCount);
+  Status = FvbNonVolatileEraseBlocks (&Instance->FvbProtocol, (EFI_LBA)0, Count, EFI_LBA_LIST_TERMINATOR);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   // Check if the size of the area is at least one block size
   ASSERT((PcdGet32(PcdFlashNvStorageVariableSize) > 0) && (PcdGet32(PcdFlashNvStorageVariableSize) / Instance->BlockIoProtocol->Media->BlockSize > 0));
@@ -310,6 +273,7 @@ InitNonVolatileVariableStore (
       PcdGet32(PcdFlashNvStorageVariableSize) +
       PcdGet32(PcdFlashNvStorageFtwWorkingSize) +
       PcdGet32(PcdFlashNvStorageFtwSpareSize);
+
   FirmwareVolumeHeader->Signature = EFI_FVH_SIGNATURE;
   FirmwareVolumeHeader->Attributes = (EFI_FVB_ATTRIBUTES_2) (
                                             EFI_FVB2_READ_ENABLED_CAP   | // Reads may be enabled
@@ -320,10 +284,12 @@ InitNonVolatileVariableStore (
                                             EFI_FVB2_WRITE_STATUS       | // Writes are currently enabled
                                             EFI_FVB2_WRITE_ENABLED_CAP    // Writes may be enabled
                                         );
+
   FirmwareVolumeHeader->HeaderLength          = sizeof(EFI_FIRMWARE_VOLUME_HEADER) + sizeof(EFI_FV_BLOCK_MAP_ENTRY);
   FirmwareVolumeHeader->Revision              = EFI_FVH_REVISION;
   FirmwareVolumeHeader->BlockMap[0].NumBlocks = PcdGet32 (PcdNvStorageVariableBlockCount);
   FirmwareVolumeHeader->BlockMap[0].Length    = Instance->BlockIoProtocol->Media->BlockSize;
+
   // BlockMap Terminator
   FirmwareVolumeHeader->BlockMap[1].NumBlocks = 0;
   FirmwareVolumeHeader->BlockMap[1].Length    = 0;
@@ -339,106 +305,56 @@ InitNonVolatileVariableStore (
   VariableStoreHeader->Format            = VARIABLE_STORE_FORMATTED;
   VariableStoreHeader->State             = VARIABLE_STORE_HEALTHY;
 
-  Status = FvbWrite (&Instance->FvbProtocol, 0, 0, &HeadersLength, Headers);
+  Status = FvbNonVolatileWrite (&Instance->FvbProtocol, 0, 0, &HeadersLength, Headers);
+
   return Status;
 }
 
 EFI_STATUS
-BlockVariableDxeInitialize (
-  IN EFI_HANDLE                   ImageHandle,
-  IN EFI_SYSTEM_TABLE             *SystemTable
+FvbInitNonVolatileStore (
+  IN BLOCK_VARIABLE_INSTANCE                    *Instance,
+  UINTN                                         StorageSize,
+  UINT8											*StorageAddress
   )
 {
-  EFI_HANDLE                      Handle;
   EFI_STATUS                      Status;
-  BLOCK_VARIABLE_INSTANCE         *Instance = &mBlockVariableInstance;
-  UINT32                          Count;
-  EFI_LBA                         Lba;
-  UINTN                           NvStorageSize;
-  EFI_DEVICE_PATH_PROTOCOL        *NvBlockDevicePath;
-  UINT8                           *NvStorageData;
   VOID                            *Headers;
   UINTN                           HeadersLength;
 
-  Instance->Signature = BLOCK_VARIABLE_SIGNATURE;
+  mMapNvStorageVariableBase = PcdGet32(PcdFlashNvStorageVariableBase);
 
   HeadersLength = sizeof(EFI_FIRMWARE_VOLUME_HEADER) + sizeof(EFI_FV_BLOCK_MAP_ENTRY) + sizeof(VARIABLE_STORE_HEADER);
+
+  if (StorageSize < HeadersLength) {
+    return EFI_BAD_BUFFER_SIZE;
+  }
+
   Headers = AllocateZeroPool(HeadersLength);
   if (Headers == NULL) {
-    DEBUG ((EFI_D_ERROR, "%a: failed to allocate memory of Headers\n", __func__));
+    DEBUG ((EFI_D_ERROR, "%a: Failed to allocate space for initializing Fv headers.\n", __func__));
     return EFI_OUT_OF_RESOURCES;
   }
 
-  Lba = (EFI_LBA) PcdGet32 (PcdNvStorageVariableBlockLba);
-  Count = PcdGet32 (PcdNvStorageVariableBlockCount);
-  Instance->Media.BlockSize = PcdGet32 (PcdNvStorageVariableBlockSize);
-  NvStorageSize = Count * Instance->Media.BlockSize;
-  Instance->StartLba = Lba;
-  HeadersLength = sizeof(EFI_FIRMWARE_VOLUME_HEADER) + sizeof(EFI_FV_BLOCK_MAP_ENTRY) + sizeof(VARIABLE_STORE_HEADER);
-  if (NvStorageSize < HeadersLength) {
-    return EFI_BAD_BUFFER_SIZE;
-  }
-  NvStorageData = (UINT8 *) (UINTN) PcdGet32(PcdFlashNvStorageVariableBase);
-  mMapNvStorageVariableBase = PcdGet32(PcdFlashNvStorageVariableBase);
-  NvBlockDevicePath = &Instance->DevicePath;
-  NvBlockDevicePath = ConvertTextToDevicePath ((CHAR16*)FixedPcdGetPtr (PcdNvStorageVariableBlockDevicePath));
-  Status = gBS->LocateDevicePath (&gEfiBlockIoProtocolGuid, &NvBlockDevicePath,
-                                  &Instance->Handle);
-  if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "Warning: Couldn't locate NVM device (status: %r)\n", Status));
-    return EFI_INVALID_PARAMETER;
-  }
-  Status = gBS->OpenProtocol (
-		      Instance->Handle,
-                      &gEfiBlockIoProtocolGuid,
-		      (VOID **) &Instance->BlockIoProtocol,
-                      gImageHandle,
-                      NULL,
-                      EFI_OPEN_PROTOCOL_GET_PROTOCOL
-                      );
-  if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "Warning: Couldn't open NVM device (status: %r)\n", Status));
-    return EFI_DEVICE_ERROR;
-  }
-  WriteBackDataCacheRange (Instance, sizeof(BLOCK_VARIABLE_INSTANCE));
-
-  Handle = NULL;
-  Status = gBS->InstallMultipleProtocolInterfaces (
-		  &Handle,
-		  &gEfiFirmwareVolumeBlockProtocolGuid, &Instance->FvbProtocol,
-		  NULL
-		  );
-  if (EFI_ERROR (Status)) {
-    goto exit;
-  }
-
-  Status = FvbRead (&Instance->FvbProtocol, 0, 0, &HeadersLength, Headers);
+  Status = FvbNonVolatileRead (&Instance->FvbProtocol, 0, 0, &HeadersLength, Headers);
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
-  Status = ValidateFvHeader (Headers);
+  Status = FvbInitNonVolatileVariableStore (Instance, Headers, HeadersLength);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "%a, Found invalid Fv Header\n", __func__));
-
-    // Erase all the block device that is reserved for variable storage
-    Status = FvbEraseBlocks (&Instance->FvbProtocol, (EFI_LBA)0, Count, EFI_LBA_LIST_TERMINATOR);
-    if (EFI_ERROR (Status)) {
-      goto exit;
-    }
-
-    Status = InitNonVolatileVariableStore (Instance, Headers, HeadersLength);
-    if (EFI_ERROR (Status)) {
-      goto exit;
-    }
+  	DEBUG ((EFI_D_ERROR, "%a: Failed to initialize Fv headers.\n", __func__));
+    return Status;
   }
 
-  if (NvStorageSize > ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength) {
-    NvStorageSize = ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength;
-    NvStorageSize = ((NvStorageSize + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize) * Instance->Media.BlockSize;
+  if (StorageSize > ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength) {
+    StorageSize = ((EFI_FIRMWARE_VOLUME_HEADER*)Headers)->FvLength;
+    StorageSize = ((StorageSize + Instance->Media.BlockSize - 1) / Instance->Media.BlockSize) * Instance->Media.BlockSize;
   }
-  Status = FvbRead (&Instance->FvbProtocol, 0, 0, &NvStorageSize, NvStorageData);
 
-exit:
-  return Status;
+  Status = FvbNonVolatileRead (&Instance->FvbProtocol, 0, 0, &StorageSize, StorageAddress);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  return EFI_SUCCESS;
 }
