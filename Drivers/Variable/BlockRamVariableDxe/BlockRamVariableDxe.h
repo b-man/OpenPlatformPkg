@@ -46,8 +46,8 @@ struct _BLOCK_VARIABLE_INSTANCE {
   EFI_FIRMWARE_VOLUME_BLOCK2_PROTOCOL FvbProtocol;
   EFI_DEVICE_PATH_PROTOCOL            DevicePath;
 
-  VOID*                               ShadowBuffer;
-  UINTN                               ShadowBufferBlockCount;
+  VOID*                               VolatileStore;
+  UINTN                               VolatileStoreBlockCount;
 };
 
 typedef struct _BLOCK_VARIABLE_INSTANCE                BLOCK_VARIABLE_INSTANCE;
@@ -232,5 +232,17 @@ FvbInitNonVolatileStore (
   UINT8											*StorageAddress
   )
 ;
+
+//
+// For internal use only
+//
+VOID
+EFIAPI
+FvbNonVolatileAddressChangeEvent (
+  IN EFI_EVENT                   Event,
+  IN VOID                        *Context
+  )
+;
+
 
 #endif /* _BLOCK_RAM_VARIABLE_DXE_H */

@@ -14,16 +14,21 @@
 
 **/
 
+#include <Guid/EventGroup.h>
+
 #include <Library/BaseMemoryLib.h>
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Library/UefiRuntimeLib.h>
 #include <Protocol/MmcHost.h>
 
 #include <Library/PrintLib.h>
@@ -31,10 +36,11 @@
 
 #include "DwSd.h"
 
+
 #define DWSD_DESC_PAGE		1
 #define DWSD_BLOCK_SIZE	        512
 #define DWSD_DMA_BUF_SIZE	(512 * 8)
-
+#define DWSD_MAX_DESC_PAGES     512
 #define DWSD_DMA_THRESHOLD	16
 
 typedef struct {
@@ -44,8 +50,12 @@ typedef struct {
   UINT32		Des3;
 } DWSD_IDMAC_DESCRIPTOR;
 
+EFI_PHYSICAL_ADDRESS        mDwSdRegisterBase;
+STATIC EFI_EVENT            mDwSdVirtualAddrChangeEvent;
+
 EFI_MMC_HOST_PROTOCOL     *gpMmcHost;
 DWSD_IDMAC_DESCRIPTOR     *gpIdmacDesc;
+STATIC DWSD_IDMAC_DESCRIPTOR     *gpVirtIdmacDesc;
 EFI_GUID mDwSdDevicePathGuid = EFI_CALLER_ID_GUID;
 STATIC UINT32 mDwSdCommand;
 STATIC UINT32 mDwSdArgument;
@@ -302,7 +312,9 @@ SendCommand (
     Data = MmioRead32 (DWSD_RINTSTS);
 
     if (Data & ErrMask) {
-      DEBUG ((EFI_D_ERROR, "Data:%x, ErrMask:%x, TBBCNT:%x, TCBCNT:%x, BYTCNT:%x, BLKSIZ:%x\n", Data, ErrMask, MmioRead32 (DWSD_TBBCNT), MmioRead32 (DWSD_TCBCNT), MmioRead32 (DWSD_BYTCNT), MmioRead32 (DWSD_BLKSIZ)));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_ERROR, "Data:%x, ErrMask:%x, TBBCNT:%x, TCBCNT:%x, BYTCNT:%x, BLKSIZ:%x\n", Data, ErrMask, MmioRead32 (DWSD_TBBCNT), MmioRead32 (DWSD_TCBCNT), MmioRead32 (DWSD_BYTCNT), MmioRead32 (DWSD_BLKSIZ)));
+      }
       return EFI_DEVICE_ERROR;
     }
     if (Data & DWSD_INT_DTO)	// Transfer Done
@@ -474,7 +486,9 @@ PrepareDmaData (
   UINTN  Cnt, Idx, LastIdx, Blks;
 
   if (Length % 4) {
-    DEBUG ((EFI_D_ERROR, "Length isn't aligned with 4\n"));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "Length isn't aligned with 4\n"));
+    }
     return EFI_BAD_BUFFER_SIZE;
   }
   if (Length < DWSD_DMA_THRESHOLD) {
@@ -485,25 +499,30 @@ PrepareDmaData (
   Length = DWSD_BLOCK_SIZE * Blks;
 
   for (Idx = 0; Idx < Cnt; Idx++) {
-    (IdmacDesc + Idx)->Des0 = DWSD_IDMAC_DES0_OWN | DWSD_IDMAC_DES0_CH |
+    (gpVirtIdmacDesc + Idx)->Des0 = DWSD_IDMAC_DES0_OWN | DWSD_IDMAC_DES0_CH |
 	    		      DWSD_IDMAC_DES0_DIC;
-    (IdmacDesc + Idx)->Des1 = DWSD_IDMAC_DES1_BS1(DWSD_DMA_BUF_SIZE);
+    (gpVirtIdmacDesc + Idx)->Des1 = DWSD_IDMAC_DES1_BS1(DWSD_DMA_BUF_SIZE);
     /* Buffer Address */
-    (IdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWSD_DMA_BUF_SIZE * Idx);
+    (gpVirtIdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWSD_DMA_BUF_SIZE * Idx);
     /* Next Descriptor Address */
-    (IdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
+    (gpVirtIdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
    	                               (sizeof(DWSD_IDMAC_DESCRIPTOR) * (Idx + 1)));
   }
   /* First Descriptor */
-  IdmacDesc->Des0 |= DWSD_IDMAC_DES0_FS;
+  gpVirtIdmacDesc->Des0 |= DWSD_IDMAC_DES0_FS;
   /* Last Descriptor */
   LastIdx = Cnt - 1;
-  (IdmacDesc + LastIdx)->Des0 |= DWSD_IDMAC_DES0_LD;
-  (IdmacDesc + LastIdx)->Des0 &= ~(DWSD_IDMAC_DES0_DIC | DWSD_IDMAC_DES0_CH);
-  (IdmacDesc + LastIdx)->Des1 = DWSD_IDMAC_DES1_BS1(Length -
+  (gpVirtIdmacDesc + LastIdx)->Des0 |= DWSD_IDMAC_DES0_LD;
+  (gpVirtIdmacDesc + LastIdx)->Des0 &= ~(DWSD_IDMAC_DES0_DIC | DWSD_IDMAC_DES0_CH);
+  (gpVirtIdmacDesc + LastIdx)->Des1 = DWSD_IDMAC_DES1_BS1(Length -
    		                (LastIdx * DWSD_DMA_BUF_SIZE));
   /* Set the Next field of Last Descriptor */
-  (IdmacDesc + LastIdx)->Des3 = 0;
+  (gpVirtIdmacDesc + LastIdx)->Des3 = 0;
+
+  if (EfiAtRuntime ()) {
+    WriteBackInvalidateDataCacheRange (gpVirtIdmacDesc, DWSD_MAX_DESC_PAGES * EFI_PAGE_SIZE);
+  }
+
   MmioWrite32 (DWSD_DBADDR, (UINT32)((UINTN)IdmacDesc));
 
   return EFI_SUCCESS;
@@ -544,7 +563,9 @@ ReadFifo (
       *(Buffer + Received) = MmioRead32 (DWSD_FIFO_START);
       Received++;
     } else {
-      DEBUG ((EFI_D_ERROR, "Received:%d, RINTSTS:%x\n", Received, Data));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_ERROR, "Received:%d, RINTSTS:%x\n", Received, Data));
+      }
     }
   }
   while (1) {
@@ -588,8 +609,10 @@ DwSdReadBlockData (
 
       Status = SendCommand (mDwSdCommand, mDwSdArgument);
       if (EFI_ERROR (Status)) {
-	DEBUG ((EFI_D_ERROR, "Failed to read data from FIFO, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
-	goto out;
+        if (!EfiAtRuntime ()) {
+	        DEBUG ((EFI_D_ERROR, "Failed to read data from FIFO, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
+        }
+	      goto out;
       }
       Status = ReadFifo (Length, Buffer);
     }
@@ -601,7 +624,9 @@ DwSdReadBlockData (
 
     Status = SendCommand (mDwSdCommand, mDwSdArgument);
     if (EFI_ERROR (Status)) {
-      DEBUG ((EFI_D_ERROR, "Failed to read data, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
+      if (!EfiAtRuntime ()) {
+        DEBUG ((EFI_D_ERROR, "Failed to read data, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
+      }
       goto out;
     }
 
@@ -645,7 +670,9 @@ DwSdWriteBlockData (
 
   Status = SendCommand (mDwSdCommand, mDwSdArgument);
   if (EFI_ERROR (Status)) {
-    DEBUG ((EFI_D_ERROR, "Failed to write data, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
+    if (!EfiAtRuntime ()) {
+      DEBUG ((EFI_D_ERROR, "Failed to write data, mDwSdCommand:%x, mDwSdArgument:%x, Status:%r\n", mDwSdCommand, mDwSdArgument, Status));
+    }
     goto out;
   }
 out:
@@ -723,6 +750,17 @@ EFI_MMC_HOST_PROTOCOL gMciHost = {
   DwSdIsMultiBlock
 };
 
+VOID
+EFIAPI
+DwSdVirtualNotifyEvent (
+  IN EFI_EVENT                   Event,
+  IN VOID                        *Context
+  )
+{
+  EfiConvertPointer (0x0, (VOID**)&mDwSdRegisterBase);
+  EfiConvertPointer (0x0, (VOID**)&gpVirtIdmacDesc);
+}
+
 EFI_STATUS
 DwSdDxeInitialize (
   IN EFI_HANDLE         ImageHandle,
@@ -734,6 +772,30 @@ DwSdDxeInitialize (
 
   Handle = NULL;
 
+  mDwSdRegisterBase = PcdGet32(PcdDwSdDxeBaseAddress);
+
+  // Declare the controller as EFI_MEMORY_RUNTIME
+  Status = gDS->AddMemorySpace (
+                  EfiGcdMemoryTypeMemoryMappedIo,
+                  mDwSdRegisterBase,
+                  SIZE_4KB,
+                  EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gDS->SetMemorySpaceAttributes (mDwSdRegisterBase, SIZE_4KB, EFI_MEMORY_UC | EFI_MEMORY_RUNTIME);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  gpIdmacDesc = (DWSD_IDMAC_DESCRIPTOR *)AllocateRuntimePages (DWSD_MAX_DESC_PAGES);
+  if (gpIdmacDesc == NULL) {
+    return EFI_BUFFER_TOO_SMALL;
+  }
+  gpVirtIdmacDesc = gpIdmacDesc;
+
   DEBUG ((EFI_D_BLKIO, "DwSdDxeInitialize()\n"));
 
   //Publish Component Name, BlockIO protocol interfaces
@@ -741,6 +803,16 @@ DwSdDxeInitialize (
                   &Handle,
                   &gEfiMmcHostProtocolGuid,         &gMciHost,
                   NULL
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_NOTIFY,
+                  DwSdVirtualNotifyEvent,
+                  NULL,
+                  &gEfiEventVirtualAddressChangeGuid,
+                  &mDwSdVirtualAddrChangeEvent
                   );
   ASSERT_EFI_ERROR (Status);
 

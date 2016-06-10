@@ -31,6 +31,7 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiRuntimeLib.h>
+#include <Library/BlockRamVariableLib.h>
 
 #include "BlockRamVariableDxe.h"
 
@@ -89,7 +90,7 @@ FvbProtocolGetPhysicalAddress (
 {
   EFI_STATUS Status;
 
-  if (!EfiAtRuntime ()) {
+  if (!EfiAtRuntime () || BrvBootContextActive ()) {
   	Status = FvbNonVolatileGetPhysicalAddress (This, Address);
   } else {
   	Status = FvbVolatileGetPhysicalAddress (This, Address);
@@ -114,7 +115,7 @@ FvbProtocolGetBlockSize (
   if (!EfiAtRuntime ()) {
   	*NumberOfBlocks = PcdGet32 (PcdNvStorageVariableBlockCount);
   } else {
-  	*NumberOfBlocks = Instance->ShadowBufferBlockCount;
+  	*NumberOfBlocks = Instance->VolatileStoreBlockCount;
   }
 
   return EFI_SUCCESS;
@@ -132,7 +133,7 @@ FvbProtocolRead (
 {
   EFI_STATUS Status;
 
-  if (!EfiAtRuntime ()) {
+  if (!EfiAtRuntime () || BrvBootContextActive ()) {
     Status = FvbNonVolatileRead (This, Lba, Offset, NumBytes, Buffer);
   } else {
   	Status = FvbVolatileRead (This, Lba, Offset, NumBytes, Buffer);
@@ -153,7 +154,7 @@ FvbProtocolWrite (
 {
   EFI_STATUS Status;
 
-  if (!EfiAtRuntime ()) {
+  if (!EfiAtRuntime () || BrvBootContextActive ()) {
     Status = FvbNonVolatileWrite(This, Lba, Offset, NumBytes, Buffer);
   } else {
     Status = FvbVolatileWrite(This, Lba, Offset, NumBytes, Buffer);
@@ -209,10 +210,13 @@ FvbVirtualAddressChangeEvent (
   IN VOID                         *Context
   )
 {
-  EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.ShadowBuffer));
+  EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.VolatileStore));
+  EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.BlockIoProtocol));
   EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.BlockIoProtocol->Media));
+  EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.BlockIoProtocol->ReadBlocks));
+  EfiConvertPointer (0x0, (VOID **)&(mBlockVariableInstance.BlockIoProtocol->WriteBlocks));
 
-  return;
+  FvbNonVolatileAddressChangeEvent(Event, Context);
 }
 
 
@@ -234,15 +238,13 @@ FvbProtocolInitializeDxe (
 
   Instance->Signature = BLOCK_VARIABLE_SIGNATURE;
 
-  DEBUG ((EFI_D_INFO, "Starting Buffered FVB DXE\n"));
-
   Lba = (EFI_LBA) PcdGet32 (PcdNvStorageVariableBlockLba);
   Count = PcdGet32 (PcdNvStorageVariableBlockCount);
   Instance->Media.BlockSize = PcdGet32 (PcdNvStorageVariableBlockSize);
   NvStorageSize = Count * Instance->Media.BlockSize;
   NvStorageData = (UINT8 *) (UINTN) PcdGet32(PcdFlashNvStorageVariableBase);
   Instance->StartLba = Lba;
-  Instance->ShadowBufferBlockCount = Count;
+  Instance->VolatileStoreBlockCount = Count;
 
   NvBlockDevicePath = &Instance->DevicePath;
   NvBlockDevicePath = ConvertTextToDevicePath ((CHAR16*)FixedPcdGetPtr (PcdNvStorageVariableBlockDevicePath));
@@ -255,9 +257,9 @@ FvbProtocolInitializeDxe (
   }
 
   Status = gBS->OpenProtocol (
-		  Instance->Handle,
+		      Instance->Handle,
           &gEfiBlockIoProtocolGuid,
-		      (VOID **) &Instance->BlockIoProtocol,
+		      (VOID **)&Instance->BlockIoProtocol,
           gImageHandle,
           NULL,
           EFI_OPEN_PROTOCOL_GET_PROTOCOL

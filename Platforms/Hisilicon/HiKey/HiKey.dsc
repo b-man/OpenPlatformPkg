@@ -142,6 +142,7 @@
   HobLib|MdePkg/Library/DxeHobLib/DxeHobLib.inf
   MemoryAllocationLib|MdePkg/Library/UefiMemoryAllocationLib/UefiMemoryAllocationLib.inf
   ReportStatusCodeLib|IntelFrameworkModulePkg/Library/DxeReportStatusCodeLibFramework/DxeReportStatusCodeLib.inf
+  BlockRamVariableLib|OpenPlatformPkg/Library/BlockRamVariableLib/BlockRamVariableLib.inf
 
 [BuildOptions]
   GCC:*_*_*_PLATFORM_FLAGS == -I$(WORKSPACE)/MdeModulePkg/Include -I$(WORKSPACE)/OpenPlatformPkg/Include -I$(WORKSPACE)/OpenPlatformPkg/Chips/Hisilicon/Hi6220/Include -I$(WORKSPACE)/OpenPlatformPkg/Platforms/Hisilicon/HiKey/Include
@@ -282,12 +283,6 @@
   gArmTokenSpaceGuid.PcdSystemMemoryBase|0x00000000
   gArmTokenSpaceGuid.PcdSystemMemorySize|0x3E000000
 
-  #
-  # SMBIOS version
-  #
-  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosVersion|0x0300
-  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosDocRev|0x0
-
   # HiKey Dual-Cluster profile
   gArmPlatformTokenSpaceGuid.PcdCoreCount|8
   gArmPlatformTokenSpaceGuid.PcdClusterCount|2
@@ -396,7 +391,6 @@
   MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
   MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
-  EmbeddedPkg/ResetRuntimeDxe/ResetRuntimeDxe.inf
   EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
   EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
 
@@ -414,19 +408,13 @@
       NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf
   }
   OpenPlatformPkg/Drivers/Variable/BlockRamVariableDxe/BlockRamVariableDxe.inf
-
+  OpenPlatformPkg/Drivers/Universal/ResetRuntimeDxe/ResetRuntimeDxe.inf
   MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 
   ArmPkg/Drivers/ArmGic/ArmGicDxe.inf
   ArmPkg/Drivers/TimerDxe/TimerDxe.inf
 
   MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
-
-  #
-  # SMBIOS/DMI
-  #
-  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-  OpenPlatformPkg/Platforms/Hisilicon/HiKey/SmbiosPlatformDxe/SmbiosPlatformDxe.inf
 
   #
   # GPIO
@@ -437,7 +425,7 @@
   #
   # MMC/SD
   #
-  EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf
+  OpenPlatformPkg/Drivers/Universal/RuntimeMmcDxe/RuntimeMmcDxe.inf
   OpenPlatformPkg/Drivers/Mmc/DwEmmcDxe/DwEmmcDxe.inf
   OpenPlatformPkg/Drivers/Mmc/DwSdDxe/DwSdDxe.inf
 

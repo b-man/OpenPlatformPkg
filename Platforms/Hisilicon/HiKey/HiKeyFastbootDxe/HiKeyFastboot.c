@@ -124,7 +124,7 @@ ReadPartitionEntries (
       GptHeader->MyLBA != 1) {
     DEBUG ((EFI_D_ERROR,
       "Fastboot platform: No GPT on flash. "
-      "Fastboot on Versatile Express does not support MBR.\n"
+      "Fastboot on HiKey does not support MBR.\n"
       ));
     return EFI_DEVICE_ERROR;
   }

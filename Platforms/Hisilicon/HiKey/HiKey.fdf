@@ -96,7 +96,6 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   INF EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
-  INF EmbeddedPkg/ResetRuntimeDxe/ResetRuntimeDxe.inf
   INF EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
   INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
 
@@ -113,12 +112,6 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
 
   #
-  # SMBIOS/DMI
-  #
-  INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
-  INF OpenPlatformPkg/Platforms/Hisilicon/HiKey/SmbiosPlatformDxe/SmbiosPlatformDxe.inf
-
-  #
   # GPIO
   #
   INF ArmPlatformPkg/Drivers/PL061GpioDxe/PL061GpioDxe.inf
@@ -127,7 +120,7 @@ READ_LOCK_STATUS   = TRUE
   #
   # Multimedia Card Interface
   #
-  INF EmbeddedPkg/Universal/MmcDxe/MmcDxe.inf
+  INF OpenPlatformPkg/Drivers/Universal/RuntimeMmcDxe/RuntimeMmcDxe.inf
   INF OpenPlatformPkg/Drivers/Mmc/DwEmmcDxe/DwEmmcDxe.inf
   INF OpenPlatformPkg/Drivers/Mmc/DwSdDxe/DwSdDxe.inf
 
@@ -183,7 +176,7 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
   INF OpenPlatformPkg/Drivers/Variable/BlockRamVariableDxe/BlockRamVariableDxe.inf
-
+  INF OpenPlatformPkg/Drivers/Universal/ResetRuntimeDxe/ResetRuntimeDxe.inf
   INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
 
   #

@@ -14,22 +14,28 @@
 
 **/
 
+#include <Guid/EventGroup.h>
+
 #include <Library/BaseMemoryLib.h>
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Library/UefiLib.h>
+#include <Library/UefiRuntimeLib.h>
 #include <Protocol/MmcHost.h>
 
 #include <Library/PrintLib.h>
 #include <Library/SerialPortLib.h>
 
 #include "DwEmmc.h"
+
 
 #define DWEMMC_DESC_PAGE		1
 #define DWEMMC_BLOCK_SIZE		512
@@ -43,8 +49,12 @@ typedef struct {
   UINT32		Des3;
 } DWEMMC_IDMAC_DESCRIPTOR;
 
+EFI_PHYSICAL_ADDRESS      mDwEmmcRegisterBase;
+STATIC EFI_EVENT          mDwEmmcVirtualAddrChangeEvent;
+
 EFI_MMC_HOST_PROTOCOL     *gpMmcHost;
 DWEMMC_IDMAC_DESCRIPTOR   *gpIdmacDesc;
+STATIC DWEMMC_IDMAC_DESCRIPTOR *gpVirtIdmacDesc;
 EFI_GUID mDwEmmcDevicePathGuid = EFI_CALLER_ID_GUID;
 STATIC UINT32 mDwEmmcCommand;
 STATIC UINT32 mDwEmmcArgument;
@@ -427,25 +437,30 @@ PrepareDmaData (
   Length = DWEMMC_BLOCK_SIZE * Blks;
 
   for (Idx = 0; Idx < Cnt; Idx++) {
-    (IdmacDesc + Idx)->Des0 = DWEMMC_IDMAC_DES0_OWN | DWEMMC_IDMAC_DES0_CH |
+    (gpVirtIdmacDesc + Idx)->Des0 = DWEMMC_IDMAC_DES0_OWN | DWEMMC_IDMAC_DES0_CH |
 	    		      DWEMMC_IDMAC_DES0_DIC;
-    (IdmacDesc + Idx)->Des1 = DWEMMC_IDMAC_DES1_BS1(DWEMMC_DMA_BUF_SIZE);
+    (gpVirtIdmacDesc + Idx)->Des1 = DWEMMC_IDMAC_DES1_BS1(DWEMMC_DMA_BUF_SIZE);
     /* Buffer Address */
-    (IdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWEMMC_DMA_BUF_SIZE * Idx);
+    (gpVirtIdmacDesc + Idx)->Des2 = (UINT32)((UINTN)Buffer + DWEMMC_DMA_BUF_SIZE * Idx);
     /* Next Descriptor Address */
-    (IdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
+    (gpVirtIdmacDesc + Idx)->Des3 = (UINT32)((UINTN)IdmacDesc +
    	                               (sizeof(DWEMMC_IDMAC_DESCRIPTOR) * (Idx + 1)));
   }
   /* First Descriptor */
-  IdmacDesc->Des0 |= DWEMMC_IDMAC_DES0_FS;
+  gpVirtIdmacDesc->Des0 |= DWEMMC_IDMAC_DES0_FS;
   /* Last Descriptor */
   LastIdx = Cnt - 1;
-  (IdmacDesc + LastIdx)->Des0 |= DWEMMC_IDMAC_DES0_LD;
-  (IdmacDesc + LastIdx)->Des0 &= ~(DWEMMC_IDMAC_DES0_DIC | DWEMMC_IDMAC_DES0_CH);
-  (IdmacDesc + LastIdx)->Des1 = DWEMMC_IDMAC_DES1_BS1(Length -
+  (gpVirtIdmacDesc + LastIdx)->Des0 |= DWEMMC_IDMAC_DES0_LD;
+  (gpVirtIdmacDesc + LastIdx)->Des0 &= ~(DWEMMC_IDMAC_DES0_DIC | DWEMMC_IDMAC_DES0_CH);
+  (gpVirtIdmacDesc + LastIdx)->Des1 = DWEMMC_IDMAC_DES1_BS1(Length -
    		                (LastIdx * DWEMMC_DMA_BUF_SIZE));
   /* Set the Next field of Last Descriptor */
-  (IdmacDesc + LastIdx)->Des3 = 0;
+  (gpVirtIdmacDesc + LastIdx)->Des3 = 0;
+
+  if (EfiAtRuntime ()) {
+    WriteBackInvalidateDataCacheRange (gpVirtIdmacDesc, DWEMMC_MAX_DESC_PAGES * EFI_PAGE_SIZE);
+  }
+
   MmioWrite32 (DWEMMC_DBADDR, (UINT32)((UINTN)IdmacDesc));
 
   return EFI_SUCCESS;
@@ -614,6 +629,17 @@ EFI_MMC_HOST_PROTOCOL gMciHost = {
   DwEmmcIsMultiBlock
 };
 
+VOID
+EFIAPI
+DwEmmcVirtualNotifyEvent (
+  IN EFI_EVENT                   Event,
+  IN VOID                        *Context
+  )
+{
+  EfiConvertPointer (0x0, (VOID**)&mDwEmmcRegisterBase);
+  EfiConvertPointer (0x0, (VOID**)&gpVirtIdmacDesc);
+}
+
 EFI_STATUS
 DwEmmcDxeInitialize (
   IN EFI_HANDLE         ImageHandle,
@@ -625,9 +651,29 @@ DwEmmcDxeInitialize (
 
   Handle = NULL;
 
-  gpIdmacDesc = (DWEMMC_IDMAC_DESCRIPTOR *)AllocatePages (DWEMMC_MAX_DESC_PAGES);
-  if (gpIdmacDesc == NULL)
+  mDwEmmcRegisterBase = PcdGet32(PcdDwEmmcDxeBaseAddress);
+
+  // Declare the controller as EFI_MEMORY_RUNTIME
+  Status = gDS->AddMemorySpace (
+                  EfiGcdMemoryTypeMemoryMappedIo,
+                  mDwEmmcRegisterBase,
+                  SIZE_4KB,
+                  EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gDS->SetMemorySpaceAttributes (mDwEmmcRegisterBase, SIZE_4KB, EFI_MEMORY_UC | EFI_MEMORY_RUNTIME);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  gpIdmacDesc = (DWEMMC_IDMAC_DESCRIPTOR *)AllocateRuntimePages (DWEMMC_MAX_DESC_PAGES);
+  if (gpIdmacDesc == NULL) {
     return EFI_BUFFER_TOO_SMALL;
+  }
+  gpVirtIdmacDesc = gpIdmacDesc;
 
   DEBUG ((EFI_D_BLKIO, "DwEmmcDxeInitialize()\n"));
 
@@ -636,6 +682,16 @@ DwEmmcDxeInitialize (
                   &Handle,
                   &gEfiMmcHostProtocolGuid,         &gMciHost,
                   NULL
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  Status = gBS->CreateEventEx (
+                  EVT_NOTIFY_SIGNAL,
+                  TPL_NOTIFY,
+                  DwEmmcVirtualNotifyEvent,
+                  NULL,
+                  &gEfiEventVirtualAddressChangeGuid,
+                  &mDwEmmcVirtualAddrChangeEvent
                   );
   ASSERT_EFI_ERROR (Status);
 

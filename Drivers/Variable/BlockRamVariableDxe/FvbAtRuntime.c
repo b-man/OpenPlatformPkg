@@ -28,8 +28,10 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiRuntimeLib.h>
+#include <Library/BlockRamVariableLib.h>
 
 #include "BlockRamVariableDxe.h"
+
 
 EFI_STATUS
 EFIAPI
@@ -51,7 +53,7 @@ FvbVolatileRead (
   }
 
   DataPtr =
-      (UINT8*) Instance->ShadowBuffer +
+      (UINT8*) Instance->VolatileStore +
       MultU64x32 (Lba, (UINT32) Instance->Media.BlockSize) +
       Offset;
 
@@ -82,7 +84,7 @@ FvbVolatileWrite (
   }
 
   DataPtr =
-      (UINT8*) Instance->ShadowBuffer +
+      (UINT8*) Instance->VolatileStore +
       MultU64x32 (Lba, (UINT32) Instance->Media.BlockSize) +
       Offset;
 
@@ -114,7 +116,7 @@ FvbVolatileGetPhysicalAddress (
 
 	Instance = CR (This, BLOCK_VARIABLE_INSTANCE, FvbProtocol, BLOCK_VARIABLE_SIGNATURE);
 
-	*Address = (EFI_PHYSICAL_ADDRESS)(UINTN) Instance->ShadowBuffer;
+	*Address = (EFI_PHYSICAL_ADDRESS)(UINTN) Instance->VolatileStore;
 
 	return EFI_SUCCESS;
 }
@@ -127,27 +129,27 @@ FvbInitVolatileStore (
 {
   EFI_STATUS                      Status;
 
-  Instance->ShadowBuffer = AllocateAlignedRuntimePages (
+  Instance->VolatileStore = AllocateAlignedRuntimePages (
       EFI_SIZE_TO_PAGES (StorageSize),
       SIZE_64KB
       );
-  if (Instance->ShadowBuffer == NULL) {
-    DEBUG ((EFI_D_ERROR, "%a: Failed to allocate shadow buffer.\n", __func__));
+  if (Instance->VolatileStore == NULL) {
+    DEBUG ((EFI_D_ERROR, "%a: Failed to allocate volatile store.\n", __func__));
     return EFI_BUFFER_TOO_SMALL;
   }
 
-  SetMem (Instance->ShadowBuffer, StorageSize, 0xff);
+  SetMem (Instance->VolatileStore, StorageSize, 0xff);
 
-  // Copy non-volatile variable data into shadow buffer
-  Status = FvbNonVolatileRead (&Instance->FvbProtocol, 0, 0, &StorageSize, Instance->ShadowBuffer);
+  // Copy non-volatile variable data into volatile store
+  Status = FvbNonVolatileRead (&Instance->FvbProtocol, 0, 0, &StorageSize, Instance->VolatileStore);
   if (EFI_ERROR (Status)) {
-  	DEBUG ((EFI_D_ERROR, "%a: Failed to copy data to shadow buffer.\n", __func__));
+  	DEBUG ((EFI_D_ERROR, "%a: Failed to copy data to volatile store.\n", __func__));
     return Status;
   }
 
   // Check if everything was copied correctly
-  DEBUG ((EFI_D_INFO, "Validating shadow buffer Fv header...\n"));
-  Status = FvbValidateHeader (Instance->ShadowBuffer);
+  DEBUG ((EFI_D_INFO, "Validating volatile store Fv header...\n"));
+  Status = FvbValidateHeader (Instance->VolatileStore);
   if (EFI_ERROR (Status)) {
     return Status;
   }
